@@ -1,3 +1,4 @@
+import sys
 import bpy
 import bmesh
 from shapely.geometry import Polygon, Point
@@ -14,17 +15,17 @@ def create_mesh_from_polygon(name, exterior, holes):
     bpy.context.collection.objects.link(obj)
 
     bm = bmesh.new()
-
     faces = []
+
     for tri in tris:
         coords = list(tri.exterior.coords)[:-1]
-        verts = [bm.verts.new((x, y, 0)) for x, y in coords]
+        verts = [bm.verts.new((x, y, z)) for x, y, z in coords]
         face = bm.faces.new(verts)
         faces.append(face)
 
     bm.faces.ensure_lookup_table()
 
-    hole_polys = [Polygon(h) for h in holes]
+    full_polygon = Polygon(shell=exterior, holes=holes)
 
     to_remove = []
     for face in bm.faces:
@@ -33,7 +34,7 @@ def create_mesh_from_polygon(name, exterior, holes):
         y = sum(v.co.y for v in verts) / len(verts)
         pt = Point(x, y)
 
-        if any(hole.contains(pt) for hole in hole_polys):
+        if not full_polygon.contains(pt):
             to_remove.append(face)
 
     bmesh.ops.delete(bm, geom=to_remove, context='FACES')
