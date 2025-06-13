@@ -12,7 +12,7 @@ if project_root not in sys.path:
 
 from shapefile.reader import read_shapefile_polygons
 from shapefile.converter import create_mesh_from_polygon
-from modeling.exporter import export_mesh_ply
+from io.exporter import export_mesh_ply
 from modeling.roofs.flat import create_flat_roof
 from modeling.roofs.gabled import create_gabled_roof
 
