@@ -10,6 +10,7 @@ sys.path.append(parent_dir)
 #######################################################
 
 import blender_ops as blender_ops
+from shapefile.converter import create_mesh_from_polygon
 
 
 ### function: calculate_roof_height ###
@@ -28,50 +29,65 @@ def calculate_roof_height(base_length, slope_percent=22):
 
 
 ### function: create_gabled_roof ###
-def create_gabled_roof(obj, height):
+def create_gabled_roof(base_obj, height, exterior_coords, round_edges=False):
     """
-    Creates a basic gabled roof on a mesh object.
+    Constructs a gabled roof on the given base mesh by creating a sloped bounding box 
+    and cutting it from the extruded base. Optionally applies rounding on the outer edges.
 
     Steps:
-    - Merges close vertices on the object to clean the mesh.
-    - Creates an optimal bounding box (minimum area) around the object.
-    - Splits the bounding box in half along the longest side.
-    - Calculates roof height based on the length of the shorter edge.
-    - Moves the central edge upward to form the roof ridge.
-    - Aligns the bounding box vertically with the reference object.
-    - Extrudes the entire mesh of the object along the Z axis.
-    - Applies a Boolean Difference modifier to trim the mesh with the bounding box.
+    1. Clean the base mesh by merging nearby vertices.
+    2. Generate a minimum-area bounding box aligned with the base.
+    3. Split the bounding box along its longest side to define a ridge.
+    4. Raise the ridge to create the gable shape.
+    5. Align the gable box vertically to match the base extrusion height.
+    6. Extrude the base mesh vertically.
+    7. Perform a Boolean difference to subtract the gabled volume.
+    8. Optionally round outer edges using a beveled polygon mesh.
 
-    Args:
-        obj (bpy.types.Object): The mesh object to add the roof to.
-        height (float): The extrusion height.
+    Parameters:
+    - base_obj (bpy.types.Object): The mesh object representing the base structure.
+    - height (float): Vertical height for roof extrusion.
+    - exterior_coords (list of tuple): Coordinates of the outer loop for rounding.
+    - round_edges (bool): Whether to apply a rounded bevel to outer edges.
 
     Returns:
-        bpy.types.Object: The modified object with the gabled roof.
+    - bpy.types.Object: The resulting mesh object with the gabled roof.
     """
-    
-    # Merge vertices that are close to each other for a cleaner mesh
-    blender_ops.merge_close_vertices(obj)
-    
-    # Create the optimal bounding box as a plane
-    bbox = blender_ops.create_optimal_bounding_box(obj)
-    
-    # Split the bounding box along its longest edge, returning new edge indices and short edge length
+
+    # Clean up base mesh
+    blender_ops.merge_close_vertices(base_obj)
+
+    # Create optimal bounding box from base footprint
+    bbox = blender_ops.create_optimal_bounding_box(base_obj)
+
+    # Identify central edge and compute roof height
     new_edge_indices, short_edge_length = blender_ops.split_bbox_plane(bbox)
-    
-    # Calculate the height to move the central edge based on the short edge length
-    height_t = calculate_roof_height(short_edge_length)
-    
-    # Move the central edge upward to form the roof ridge
-    blender_ops.move_edge_up_object(bbox, new_edge_indices, height_t)
-    
-    # Align the bounding box vertically with the highest point of the reference object
-    blender_ops.align_bbox_to_reference(bbox, obj)
-    
-    # Extrude the original mesh along Z by the specified height
-    blender_ops.extrude_faces_z(obj, height)
-    
-    # Apply Boolean Difference modifier to cut the mesh using the bounding box
-    blender_ops.apply_boolean_difference(obj, bbox, modifier_name="Boolean_Diff")
-    
-    return obj
+    ridge_height = calculate_roof_height(short_edge_length)
+
+    # Form the gabled shape by raising the ridge edge
+    blender_ops.move_edge_up_object(bbox, new_edge_indices, ridge_height)
+    blender_ops.align_mesh_to_reference(bbox, height)
+
+    # Extrude the base mesh upward
+    blender_ops.extrude_faces_z(base_obj, height)
+
+    # Cut the base using the gabled volume
+    blender_ops.apply_boolean_difference(base_obj, bbox, modifier_name="Boolean_Diff")
+
+    if round_edges:
+        # Create and bevel the polygon outline mesh
+        round_obj = create_mesh_from_polygon("round_edge", exterior_coords, [])
+        blender_ops.merge_close_vertices(round_obj)
+        blender_ops.limited_dissolve_all_faces(round_obj)
+        blender_ops.compute_custom_vertex_attribute(round_obj, target_coords=exterior_coords)
+        blender_ops.apply_bevel_modifier(round_obj, width=0.2)
+        blender_ops.extrude_faces_z(round_obj, height + 1)
+
+        # Intersect the beveled outline with the roof mesh
+        blender_ops.apply_boolean_intersect(base_obj, round_obj, apply=True)
+
+        # Clean resulting geometry
+        blender_ops.triangulate_mesh(base_obj)
+        blender_ops.merge_close_vertices(base_obj)
+        blender_ops.limited_dissolve_all_faces(base_obj)
+        blender_ops.triangulate_mesh(base_obj)

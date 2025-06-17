@@ -50,9 +50,9 @@ RUN wget https://download.blender.org/release/Blender4.4/blender-${BLENDER_VERSI
     ln -s /opt/blender-${BLENDER_VERSION}-linux-x64/blender /usr/local/bin/blender && \
     rm blender-${BLENDER_VERSION}-linux-x64.tar.xz
 
-RUN /opt/blender-4.4.0-linux-x64/4.4/python/bin/python3.11 -m pip install plyfile shapely geopandas
+RUN /opt/blender-4.4.0-linux-x64/4.4/python/bin/python3.11 -m pip install plyfile shapely geopandas trimesh
 
-RUN apt-get update && apt-get install -y libsm6 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libsm6 libgmp-dev libmpfr-dev && rm -rf /var/lib/apt/lists/*
 
 # Imposta working directory
 WORKDIR /workspace

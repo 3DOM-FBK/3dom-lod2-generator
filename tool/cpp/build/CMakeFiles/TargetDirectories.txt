@@ -1,0 +1,3 @@
+/app/tool/cpp/build/CMakeFiles/extrude_skeleton.dir
+/app/tool/cpp/build/CMakeFiles/edit_cache.dir
+/app/tool/cpp/build/CMakeFiles/rebuild_cache.dir
