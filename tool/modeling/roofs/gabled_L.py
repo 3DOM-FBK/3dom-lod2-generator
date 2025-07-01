@@ -34,7 +34,7 @@ def run_executable(exe_path, args=None):
 
 
 ### function: create_hip_roof ###
-def create_hip_roof(base_obj, height, idx, exterior_coords, round_edges=False):
+def create_gabled_L_roof(base_obj, height, idx, exterior_coords, round_edges=False):
     """
     Creates a hip roof on top of a base mesh object using an external C++ process.
     If the external process fails, only the base mesh is extruded.
@@ -49,7 +49,6 @@ def create_hip_roof(base_obj, height, idx, exterior_coords, round_edges=False):
     Returns:
     - Object: The final mesh object (either roof + base or just base extruded).
     """
-
     blender_ops.merge_close_vertices(base_obj)
 
     # Export base polygon for roof generation
@@ -68,6 +67,11 @@ def create_hip_roof(base_obj, height, idx, exterior_coords, round_edges=False):
     blender_ops.clean_tmp_folder()
     blender_ops.delete_downward_faces(hip_obj)
 
+    blender_ops.merge_close_vertices(hip_obj)
+    blender_ops.limited_dissolve_all_faces(hip_obj)
+    blender_ops.align_top_vertex_to_plane(hip_obj)
+    blender_ops.triangulate_mesh(hip_obj)
+
     hip_height = blender_ops.get_mesh_height(hip_obj)
     base_extrude_height = height - hip_height
     if (base_extrude_height < 0):
@@ -80,6 +84,8 @@ def create_hip_roof(base_obj, height, idx, exterior_coords, round_edges=False):
     # Join roof with base
     blender_ops.join_meshes(base_obj, hip_obj)
     blender_ops.merge_close_vertices(base_obj)
+
+    blender_ops.limited_dissolve_all_faces(base_obj)
 
     if round_edges:
         round_obj = create_mesh_from_polygon("round_edge", exterior_coords, [])

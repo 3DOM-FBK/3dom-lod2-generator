@@ -49,3 +49,5 @@ def create_flat_roof(base_obj, height, exterior_coords, round_edges=False):
         blender_ops.merge_close_vertices(base_obj)
         blender_ops.limited_dissolve_all_faces(base_obj)
         blender_ops.triangulate_mesh(base_obj)
+
+    blender_ops.triangulate_mesh(base_obj)

@@ -1,11 +1,22 @@
 import bpy
 import bmesh
-from mathutils import Vector
+from mathutils import Vector, geometry
 import mathutils
 import numpy as np
 import os
 import shutil
 import math
+from scipy.spatial import ConvexHull
+import sys
+
+#######################################################
+# Adds the root project in the Python path
+#######################################################
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(parent_dir)
+#######################################################
+
+from modeling.min_bounding_rect import minBoundingRect
 
 
 ### function: clean_tmp_folder ###
@@ -95,49 +106,121 @@ def extrude_faces_z(obj, height):
     obj.select_set(False)
 
 
-### function: create_optimal_bounding_box ###
-def create_optimal_bounding_box(obj, name="OBB_Plane", offset=0.5):
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    eval_obj = obj.evaluated_get(depsgraph)
-    mesh = eval_obj.to_mesh()
+### function: get_convex_hull_2d_numpy ###
+def get_convex_hull_2d_numpy(obj=None):
+    """
+    Computes the 2D convex hull (XY projection) of a mesh object's vertices.
 
-    verts = [eval_obj.matrix_world @ v.co for v in mesh.vertices]
-    eval_obj.to_mesh_clear()
+    Args:
+        obj (bpy.types.Object): The mesh object. If None, uses active object.
 
-    points_2d = np.array([[v.x, v.y] for v in verts])
+    Returns:
+        np.ndarray: An (N x 2) array of 2D convex hull points in world coordinates.
+    """
+    if obj is None:
+        obj = bpy.context.active_object
 
-    mean = np.mean(points_2d, axis=0)
-    centered = points_2d - mean
-    cov = np.cov(centered.T)
-    eigvals, eigvecs = np.linalg.eigh(cov)
+    if obj is None or obj.type != 'MESH':
+        raise ValueError("No valid mesh object provided.")
 
-    rotated = centered @ eigvecs
+    # Convert all mesh vertices to world-space and project to XY
+    verts_world_xy = [ (obj.matrix_world @ v.co).to_2d() for v in obj.data.vertices ]
+    verts_np = np.array([[v.x, v.y] for v in verts_world_xy])
 
-    min_x, min_y = np.min(rotated, axis=0)
-    max_x, max_y = np.max(rotated, axis=0)
+    if len(verts_np) < 3:
+        raise ValueError("Not enough vertices to compute convex hull.")
 
-    # Applica offset su tutti i lati
-    min_x -= offset
-    min_y -= offset
-    max_x += offset
-    max_y += offset
+    # Compute convex hull
+    hull = ConvexHull(verts_np)
+    hull_coords = verts_np[hull.vertices]
 
-    obb_coords = np.array([
-        [min_x, min_y],
-        [max_x, min_y],
-        [max_x, max_y],
-        [min_x, max_y]
+    return hull_coords
+
+
+### function: create_mesh_from_2d_points ###
+def create_mesh_from_2d_points(points_2d, name="GeneratedMesh", z_height=0.0):
+    """
+    Creates a flat Blender mesh from a Nx2 numpy array of 2D points.
+
+    Args:
+        points_2d (np.ndarray): Nx2 array of (x, y) points (must be ordered for face).
+        name (str): Name of the new mesh object.
+        z_height (float): Z value to assign to all vertices.
+
+    Returns:
+        bpy.types.Object: The newly created mesh object.
+    """
+    if points_2d.shape[1] != 2:
+        raise ValueError("Input must be a Nx2 NumPy array.")
+
+    # Ensure the polygon is closed
+    if not np.allclose(points_2d[0], points_2d[-1]):
+        points_2d = np.vstack([points_2d, points_2d[0]])
+
+    # Create mesh data
+    mesh = bpy.data.meshes.new(name)
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+
+    verts = [Vector((x, y, z_height)) for x, y in points_2d]
+    edges = []
+    faces = [list(range(len(verts)))]
+
+    mesh.from_pydata(verts, edges, faces)
+    mesh.update()
+
+    return obj
+
+
+def expand_bbox_from_center(center, rot_angle, width, height, offset=0.5):
+    """
+    Expands a rotated bounding box from its center, angle, width, and height.
+
+    Args:
+        center (np.ndarray): (2,) array representing the center (cx, cy).
+        rot_angle (float): Rotation angle in radians.
+        width (float): Original width of the bbox.
+        height (float): Original height of the bbox.
+        offset (float): Expansion value to apply outward.
+
+    Returns:
+        np.ndarray: (4, 2) array of 2D points representing the expanded bbox corners.
+    """
+    # Expand dimensions
+    w = width / 2.0 + offset
+    h = height / 2.0 + offset
+
+    # Corners in local (unrotated) space
+    local_corners = np.array([
+        [ w, -h],
+        [-w, -h],
+        [-w,  h],
+        [ w,  h]
     ])
 
-    obb_world = (obb_coords @ eigvecs.T) + mean
-    obb_3d = [(x, y, 0) for x, y in obb_world]
+    # Rotation matrix
+    cos_a = math.cos(rot_angle)
+    sin_a = math.sin(rot_angle)
+    R = np.array([
+        [cos_a, -sin_a],
+        [sin_a,  cos_a]
+    ])
 
-    mesh_data = bpy.data.meshes.new(name + "_mesh")
-    mesh_data.from_pydata(obb_3d, [], [(0, 1, 2, 3)])
-    mesh_data.update()
+    # Rotate and translate corners
+    rotated_corners = np.dot(local_corners, R.T) + center
 
-    obb_obj = bpy.data.objects.new(name, mesh_data)
-    bpy.context.collection.objects.link(obb_obj)
+    return rotated_corners
+
+
+### function: create_optimal_bounding_box ###
+def create_optimal_bounding_box(obj, name="OBB_Plane", offset=0.5):
+    hull_coords = get_convex_hull_2d_numpy(obj)
+
+    bbox = minBoundingRect(hull_coords)
+
+    corner_points = expand_bbox_from_center(bbox[4], bbox[0], bbox[2], bbox[3], offset=offset)
+
+    obb_obj = create_mesh_from_2d_points(corner_points, name)
 
     return obb_obj
 
@@ -245,6 +328,7 @@ def apply_boolean_difference(obj_target, obj_cutter, modifier_name="Boolean_Diff
     return obj_target
 
 
+### function: apply_boolean_intersect ###
 def apply_boolean_intersect(obj_a, obj_b, apply=True):
     if obj_a is None or obj_b is None:
         print("Entrambi gli oggetti devono essere specificati.")
@@ -589,6 +673,7 @@ def apply_bevel_modifier(obj=None, name="Bevel_Weight", width=1, segments=4):
     bpy.ops.object.modifier_apply(modifier=mod.name)
 
 
+### function: triangulate_mesh ###
 def triangulate_mesh(obj=None):
     if obj is None:
         obj = bpy.context.active_object
@@ -607,3 +692,117 @@ def triangulate_mesh(obj=None):
     bm.to_mesh(mesh)
     mesh.update()
     bm.free()
+
+
+### function: collapse_top_vertices_to_center ###
+def collapse_top_vertices_to_center(obj=None):
+    """
+    Collapses all non-base vertices of a mesh to their center point in Z,
+    leaving the base of the object (lowest Z vertices) untouched.
+
+    Args:
+        obj (Object): Blender object to operate on. Defaults to active object.
+    """
+    if obj is None:
+        obj = bpy.context.active_object
+    if obj is None or obj.type != 'MESH':
+        print("No valid mesh object selected.")
+        return
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+    mesh = obj.data
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    bm.verts.ensure_lookup_table()
+
+    # Find min Z
+    min_z = min(v.co.z for v in bm.verts)
+
+    # Find all vertices to collapse
+    top_verts = [v for v in bm.verts if v.co.z > min_z]
+
+    if not top_verts:
+        print("No non-base vertices found.")
+        bm.free()
+        return
+
+    # Compute center position
+    center = sum((v.co for v in top_verts), Vector()) / len(top_verts)
+
+    # modify vertices position
+    for v in top_verts:
+        v.co = center
+
+    bm.to_mesh(mesh)
+    mesh.update()
+    bm.free()
+    print("Top vertices collapsed to center.")
+
+
+
+### function: align_top_vertex_to_plane ###
+def align_top_vertex_to_plane(obj=None):
+    """
+    Aligns the highest vertex of each selected triangular face to a vertical plane
+    defined by the two lower vertices of the same face.
+
+    The function operates in Edit Mode on the given mesh object (or the active object if none is provided).
+    For each selected triangle:
+    - Identifies the top vertex (with highest Z coordinate).
+    - Constructs a vertical plane (Z axis up) through the other two base vertices.
+    - Projects the top vertex onto this plane along the direction of the external edge connected to it.
+
+    This is useful for flattening or shaping geometry such as sloped roof surfaces.
+
+    Args:
+        obj (bpy.types.Object, optional): The target mesh object. Defaults to the active object.
+    """
+    if obj is None:
+        obj = bpy.context.active_object
+    if obj is None or obj.type != 'MESH':
+        print("No valid mesh object selected.")
+        return
+
+    bpy.ops.object.mode_set(mode='EDIT')
+    bm = bmesh.from_edit_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    bm.verts.ensure_lookup_table()
+
+    for f in bm.faces:
+        if not f.select or len(f.verts) != 3:
+            continue
+
+        verts = sorted(f.verts, key=lambda v: v.co.z, reverse=True)
+        top_v = verts[0]
+        base_v1, base_v2 = verts[1], verts[2]
+
+        base_dir = (base_v2.co - base_v1.co).normalized()
+        
+        up = Vector((0, 0, 1))
+        normal = base_dir.cross(up).normalized()
+
+        plane_point = base_v1.co
+
+        external_edge = None
+        for e in top_v.link_edges:
+            if f not in e.link_faces:
+                external_edge = e
+                break
+
+        if external_edge:
+            v1, v2 = external_edge.verts
+            other_vert = v1 if v1 != top_v else v2
+
+            intersection = mathutils.geometry.intersect_line_plane(
+                v1.co, v2.co,
+                plane_point, normal,
+                False
+            )
+
+            if intersection:
+                top_v.co = intersection
+        else:
+            print("--> No projection_dir found.")
+
+    bmesh.update_edit_mesh(obj.data)
+    bpy.ops.object.mode_set(mode='OBJECT')

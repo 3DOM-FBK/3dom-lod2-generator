@@ -59,6 +59,8 @@ def create_gabled_roof(base_obj, height, exterior_coords, round_edges=False):
 
     # Create optimal bounding box from base footprint
     bbox = blender_ops.create_optimal_bounding_box(base_obj)
+    blender_ops.merge_close_vertices(bbox)
+    blender_ops.limited_dissolve_all_faces(bbox)
 
     # Identify central edge and compute roof height
     new_edge_indices, short_edge_length = blender_ops.split_bbox_plane(bbox)
@@ -91,3 +93,5 @@ def create_gabled_roof(base_obj, height, exterior_coords, round_edges=False):
         blender_ops.merge_close_vertices(base_obj)
         blender_ops.limited_dissolve_all_faces(base_obj)
         blender_ops.triangulate_mesh(base_obj)
+    
+    blender_ops.triangulate_mesh(base_obj)
