@@ -38,7 +38,7 @@ def create_flat_roof(base_obj, height, exterior_coords, round_edges=False):
         blender_ops.merge_close_vertices(round_obj)
         blender_ops.limited_dissolve_all_faces(round_obj)
         blender_ops.compute_custom_vertex_attribute(round_obj, target_coords=exterior_coords)
-        blender_ops.apply_bevel_modifier(round_obj, width=0.2)
+        blender_ops.apply_bevel_modifier(round_obj, width=2)
         blender_ops.extrude_faces_z(round_obj, height + 1)
 
         # Apply boolean intersection to round the base object's edges

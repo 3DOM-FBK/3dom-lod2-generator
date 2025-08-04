@@ -11,6 +11,7 @@ sys.path.append(parent_dir)
 
 import blender_ops as blender_ops
 from shapefile.converter import create_mesh_from_polygon
+from io_utils.exporter import export_mesh_ply
 
 
 ### function: calculate_roof_height ###
@@ -53,7 +54,6 @@ def create_gabled_roof(base_obj, height, exterior_coords, round_edges=False):
     Returns:
     - bpy.types.Object: The resulting mesh object with the gabled roof.
     """
-
     # Clean up base mesh
     blender_ops.merge_close_vertices(base_obj)
 
@@ -69,6 +69,7 @@ def create_gabled_roof(base_obj, height, exterior_coords, round_edges=False):
     # Form the gabled shape by raising the ridge edge
     blender_ops.move_edge_up_object(bbox, new_edge_indices, ridge_height)
     blender_ops.align_mesh_to_reference(bbox, height)
+    blender_ops.move_mesh_z(bbox, -0.1)
 
     # Extrude the base mesh upward
     blender_ops.extrude_faces_z(base_obj, height)
@@ -82,7 +83,7 @@ def create_gabled_roof(base_obj, height, exterior_coords, round_edges=False):
         blender_ops.merge_close_vertices(round_obj)
         blender_ops.limited_dissolve_all_faces(round_obj)
         blender_ops.compute_custom_vertex_attribute(round_obj, target_coords=exterior_coords)
-        blender_ops.apply_bevel_modifier(round_obj, width=0.2)
+        blender_ops.apply_bevel_modifier(round_obj, width=2)
         blender_ops.extrude_faces_z(round_obj, height + 1)
 
         # Intersect the beveled outline with the roof mesh

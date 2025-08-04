@@ -61,35 +61,38 @@ def create_pyramid_roof(base_obj, height, idx, exterior_coords, round_edges=Fals
     if code != 0:
         print("⚠️ External C++ process failed. Skipping pyramid roof generation.")
         blender_ops.extrude_faces_z(base_obj, height)
+    else:
+        # Import generated pyramid roof mesh
+        try:
+            pyramid_obj = import_ply(TMP_OUT_MESH)
+            blender_ops.clean_tmp_folder()
+            blender_ops.delete_downward_faces(pyramid_obj)
 
-    # Import generated pyramid roof mesh
-    pyramid_obj = import_ply(TMP_OUT_MESH)
-    blender_ops.clean_tmp_folder()
-    blender_ops.delete_downward_faces(pyramid_obj)
+            # Fuse top vertices
+            blender_ops.collapse_top_vertices_to_center(pyramid_obj)
+            blender_ops.merge_close_vertices(pyramid_obj)
 
-    # Fuse top vertices
-    blender_ops.collapse_top_vertices_to_center(pyramid_obj)
-    blender_ops.merge_close_vertices(pyramid_obj)
+            pyramid_height = blender_ops.get_mesh_height(pyramid_obj)
+            base_extrude_height = height - pyramid_height
+            if (base_extrude_height < 0):
+                base_extrude_height = 1.0
 
-    pyramid_height = blender_ops.get_mesh_height(pyramid_obj)
-    base_extrude_height = height - pyramid_height
-    if (base_extrude_height < 0):
-        base_extrude_height = 1.0
+            blender_ops.extrude_faces_z(base_obj, base_extrude_height)
+            blender_ops.align_bottom_to_top(pyramid_obj, base_obj)
+            blender_ops.delete_facing_up_faces(base_obj)
 
-    blender_ops.extrude_faces_z(base_obj, base_extrude_height)
-    blender_ops.align_bottom_to_top(pyramid_obj, base_obj)
-    blender_ops.delete_facing_up_faces(base_obj)
-
-    # Join roof with base
-    blender_ops.join_meshes(base_obj, pyramid_obj)
-    blender_ops.merge_close_vertices(base_obj)
+            # Join roof with base
+            blender_ops.join_meshes(base_obj, pyramid_obj)
+            blender_ops.merge_close_vertices(base_obj)
+        except:
+            print("⚠️ failed importing geometry.")
 
     if round_edges:
         round_obj = create_mesh_from_polygon("round_edge", exterior_coords, [])
         blender_ops.merge_close_vertices(round_obj)
         blender_ops.limited_dissolve_all_faces(round_obj)
         blender_ops.compute_custom_vertex_attribute(round_obj, target_coords=exterior_coords)
-        blender_ops.apply_bevel_modifier(round_obj, width=0.2)
+        blender_ops.apply_bevel_modifier(round_obj, width=2)
         blender_ops.extrude_faces_z(round_obj, base_extrude_height + 1)
         blender_ops.apply_boolean_intersect(base_obj, round_obj, apply=True)
 

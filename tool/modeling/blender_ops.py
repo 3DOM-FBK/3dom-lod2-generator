@@ -323,6 +323,7 @@ def apply_boolean_difference(obj_target, obj_cutter, modifier_name="Boolean_Diff
     mod.operation = 'DIFFERENCE'
     mod.object = obj_cutter
 
+
     bpy.ops.object.modifier_apply(modifier=modifier_name)
 
     return obj_target
@@ -806,3 +807,48 @@ def align_top_vertex_to_plane(obj=None):
 
     bmesh.update_edit_mesh(obj.data)
     bpy.ops.object.mode_set(mode='OBJECT')
+
+
+### function: move_mesh_z ###
+def move_mesh_z(obj=None, delta_z=0.0):
+    """
+    Moves the given mesh object along the Z-axis by the specified amount.
+
+    Args:
+        obj (bpy.types.Object): The Blender object to move. If None, uses the active object.
+        delta_z (float): Distance to move along the Z-axis.
+    """
+    if obj is None:
+        obj = bpy.context.active_object
+
+    if obj is None or obj.type != 'MESH':
+        print("No valid mesh object selected.")
+        return
+
+    obj.location.z += delta_z
+
+
+### function: move_mesh_z ###
+def flatten_mesh_to_z(obj, z_min):
+    for vert in obj.data.vertices:
+        vert.co.z = z_min
+
+
+### function: count_mesh_points ###
+def count_mesh_points(obj):
+    if obj and obj.type == 'MESH':
+        num_points = len(obj.data.vertices)
+        print(f"Numero di punti (vertici) nella mesh '{obj.name}': {num_points}")
+        return num_points
+    else:
+        print(f"L'oggetto '{obj_name}' non è una mesh valida.")
+        return -1
+
+
+### function: duplicate_object ###
+def duplicate_object(obj, new_name):
+    obj_copy = obj.copy()
+    obj_copy.data = obj.data.copy()
+    obj_copy.name = new_name
+    bpy.context.collection.objects.link(obj_copy)
+    return obj_copy

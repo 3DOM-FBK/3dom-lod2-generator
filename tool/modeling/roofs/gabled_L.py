@@ -56,43 +56,46 @@ def create_gabled_L_roof(base_obj, height, idx, exterior_coords, round_edges=Fal
     export_polygon_to_txt(base_obj, txt_path)
 
     # Attempt to generate hip roof using external process
-    stdout, stderr, code = run_executable(CPP_PATH, [txt_path, TMP_OUT_MESH, "20.0"])
+    stdout, stderr, code = run_executable(CPP_PATH, [txt_path, TMP_OUT_MESH, "2000.0"])
 
     if code != 0:
         print("⚠️ External C++ process failed. Skipping hip roof generation.")
         blender_ops.extrude_faces_z(base_obj, height)
+    else:
+        # Import generated hip roof mesh
+        try:
+            hip_obj = import_ply(TMP_OUT_MESH)
+            blender_ops.clean_tmp_folder()
+            blender_ops.delete_downward_faces(hip_obj)
 
-    # Import generated hip roof mesh
-    hip_obj = import_ply(TMP_OUT_MESH)
-    blender_ops.clean_tmp_folder()
-    blender_ops.delete_downward_faces(hip_obj)
+            blender_ops.merge_close_vertices(hip_obj)
+            blender_ops.limited_dissolve_all_faces(hip_obj)
+            blender_ops.align_top_vertex_to_plane(hip_obj)
+            blender_ops.triangulate_mesh(hip_obj)
 
-    blender_ops.merge_close_vertices(hip_obj)
-    blender_ops.limited_dissolve_all_faces(hip_obj)
-    blender_ops.align_top_vertex_to_plane(hip_obj)
-    blender_ops.triangulate_mesh(hip_obj)
+            hip_height = blender_ops.get_mesh_height(hip_obj)
+            base_extrude_height = height - hip_height
+            if (base_extrude_height < 0):
+                base_extrude_height = 1.0
 
-    hip_height = blender_ops.get_mesh_height(hip_obj)
-    base_extrude_height = height - hip_height
-    if (base_extrude_height < 0):
-        base_extrude_height = 1.0
+            blender_ops.extrude_faces_z(base_obj, base_extrude_height)
+            blender_ops.align_bottom_to_top(hip_obj, base_obj)
+            blender_ops.delete_facing_up_faces(base_obj)
 
-    blender_ops.extrude_faces_z(base_obj, base_extrude_height)
-    blender_ops.align_bottom_to_top(hip_obj, base_obj)
-    blender_ops.delete_facing_up_faces(base_obj)
+            # Join roof with base
+            blender_ops.join_meshes(base_obj, hip_obj)
+            blender_ops.merge_close_vertices(base_obj)
 
-    # Join roof with base
-    blender_ops.join_meshes(base_obj, hip_obj)
-    blender_ops.merge_close_vertices(base_obj)
-
-    blender_ops.limited_dissolve_all_faces(base_obj)
+            blender_ops.limited_dissolve_all_faces(base_obj)
+        except:
+            print("⚠️ failed importing geometry.")
 
     if round_edges:
         round_obj = create_mesh_from_polygon("round_edge", exterior_coords, [])
         blender_ops.merge_close_vertices(round_obj)
         blender_ops.limited_dissolve_all_faces(round_obj)
         blender_ops.compute_custom_vertex_attribute(round_obj, target_coords=exterior_coords)
-        blender_ops.apply_bevel_modifier(round_obj, width=0.2)
+        blender_ops.apply_bevel_modifier(round_obj, width=2)
         blender_ops.extrude_faces_z(round_obj, base_extrude_height + 1)
         blender_ops.apply_boolean_intersect(base_obj, round_obj, apply=True)
 
